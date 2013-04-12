@@ -388,7 +388,9 @@ class Net::LDAP
     @auth = args[:auth] || DefaultAuth
     @base = args[:base] || DefaultTreebase
 		@force_no_page = args[:force_no_page] || DefaultForceNoPage
+    @ca_file = args[:ca_file] # may be nil
     encryption args[:encryption] # may be nil
+
 
     if pr = @auth[:password] and pr.respond_to?(:call)
       @auth[:password] = pr.call
@@ -478,7 +480,7 @@ class Net::LDAP
   # used for unencrypted connections.]</i>
   def encryption(args)
     case args
-    when :simple_tls, :start_tls
+    when :simple_tls, :start_tls, :tls
       args = { :method => args }
     end
     @encryption = args
@@ -1152,9 +1154,13 @@ class Net::LDAP::Connection #:nodoc:
     end
   end
 
-  def self.wrap_with_ssl(io)
+  def self.wrap_with_ssl(io, ca_file = nil)
     raise Net::LDAP::LdapError, "OpenSSL is unavailable" unless Net::LDAP::HasOpenSSL
-    ctx = OpenSSL::SSL::SSLContext.new
+    if ca_cert == nil
+      ctx = OpenSSL::SSL::SSLContext.new
+    else
+      ctx = OpenSSL::SSL::SSLContext.new(ca_file = ca_file)
+    end
     conn = OpenSSL::SSL::SSLSocket.new(io, ctx)
     conn.connect
     conn.sync_close = true
@@ -1196,6 +1202,8 @@ class Net::LDAP::Connection #:nodoc:
       @conn = self.class.wrap_with_ssl(@conn)
       # additional branches requiring server validation and peer certs, etc.
       # go here.
+    when :tls
+      @conn = self.class.wrap_with_ssl(@conn, @ca_file)
     when :start_tls
       msgid = next_msgid.to_ber
       request = [Net::LDAP::StartTlsOid.to_ber].to_ber_appsequence(Net::LDAP::PDU::ExtendedRequest)
